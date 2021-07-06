@@ -38,8 +38,8 @@ void PluginInit() {
 	g_Hooks.RegisterHook(Hooks::Player::ClientConnected, @ClientConnect);
 	g_Hooks.RegisterHook( Hooks::Player::ClientPutInServer, @ClientJoin );
 
-	@g_safeChatDelay = CCVar( "safe_chat_delay", 10.0f );
-	@g_spamAllowed = CCVar( "spam_threshold", 150.0f );
+	@g_safeChatDelay = CCVar( "safe_chat_delay", 5.0f );
+	@g_spamAllowed = CCVar( "spam_threshold", 120.0f );
 	@g_safeRejoinDelay = CCVar( "safe_rejoin_delay", 60.0f );
 	@g_rejoinSpamAllowed = CCVar( "rejoin_spam_allowed", 3 );
 	
@@ -185,7 +185,7 @@ HookReturnCode ClientSay( SayParameters@ pParams ) {
 		if (timeSinceLastChat < throttleDelay) {
 			state.spam += throttleDelay - timeSinceLastChat;
 			if (timeSinceLastChat < 1.0f) {
-				state.spam += throttleDelay; // flooding the chat
+				state.spam += throttleDelay*2; // flooding the chat
 			}
 			state.spam = Math.min(spamThreshold, state.spam); // never wait more than the safe message delay
 		}
