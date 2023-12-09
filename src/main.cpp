@@ -248,6 +248,7 @@ void ClientCommand(edict_t* plr) {
 void MapInit(edict_t* edict_list, int edictCount, int clientMax) {
     g_player_states.clear();
     g_nickname_ips.clear();
+	RETURN_META(MRES_IGNORED);
 }
 
 void StartFrame() {
