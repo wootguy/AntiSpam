@@ -75,7 +75,7 @@ float getSpamThreshold() {
 }
 
 void cooldown_chat_spam_counters() {
-	float spamThreshold = getSpamThreshold();
+	//float spamThreshold = getSpamThreshold();
 
 	for (int i = 1; i <= gpGlobals->maxClients; i++) {
 		edict_t* ed = INDEXENT(i);
@@ -117,7 +117,7 @@ void cooldown_join_spam_counters() {
 }
 
 string getIpWithoutPort(string ip) {
-	if (ip.find(":") != -1)
+	if (ip.find(":") != std::string::npos)
 		return ip.substr(0, ip.find(":"));
 	else
 		return ip;
@@ -202,7 +202,8 @@ HOOK_RETURN_DATA ClientCommand(CBasePlayer* plr) {
 			state->isBlocked = true;
 			state->notifyNextMsg = true;
 			float waitTime = ceilf(state->getNextSafeMessageTime());
-			//SayTextAll(HUD_PRINTNOTIFY, "[AntiSpam] " + plr.pev.netname + " can't send messages for " + waitTime + " seconds.\n");
+			UTIL_ClientPrintAll(print_console, UTIL_VarArgs("[AntiSpam] %s can't send messages for %d seconds.\n", 
+					STRING(plr->pev->netname), waitTime));
 		}
 	}
 
