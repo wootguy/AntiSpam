@@ -40,8 +40,8 @@ struct SpamState {
     }
 };
 
-map<string,SpamState> g_player_states;
-map<string,string> g_nickname_ips; // maps a nickname to an ip address. Only valid between a conect and join hook
+unordered_map<string,SpamState> g_player_states;
+unordered_map<string,string> g_nickname_ips; // maps a nickname to an ip address. Only valid between a conect and join hook
 
 SpamState* getSpamState(edict_t* plr)
 {
