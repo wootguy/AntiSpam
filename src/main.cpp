@@ -1,20 +1,14 @@
-#include "mmlib.h"
+#include "extdll.h"
+#include "util.h"
+#include "cbase.h"
+#include "PluginHooks.h"
+#include "PluginManager.h"
+#include "Scheduler.h"
+#include "CommandArgs.h"
+#include "CBasePlayer.h"
 #include <string>
 
 using namespace std;
-
-// Description of plugin
-plugin_info_t Plugin_info = {
-    META_INTERFACE_VERSION,	// ifvers
-    "AntiSpam",	// name
-    "1.0",	// version
-    __DATE__,	// date
-    "AntiSpam",	// author
-    "github",	// url
-    "ANTISPAM",	// logtag, all caps please
-    PT_ANYTIME,	// (when) loadable
-    PT_ANYPAUSE	// (when) unloadable
-};
 
 float getSpamThreshold();
 
@@ -23,7 +17,7 @@ cvar_t* g_spamAllowed;       // higher = more spam allowed before chats are thro
 cvar_t* g_safeRejoinDelay;   // can rejoin at this speed and never be throttled
 cvar_t* g_rejoinSpamAllowed; // number of rejoins allowed before throttling
 
-const int gmsgSayText = 76;
+HLCOOP_PLUGIN_HOOKS g_hooks;
 
 struct SpamState {
     float lastChat = -999;
@@ -80,31 +74,19 @@ float getSpamThreshold() {
 	return g_spamAllowed->value;
 }
 
-void SayText(edict_t* target, string msg) {
-	MESSAGE_BEGIN(MSG_ONE, gmsgSayText, NULL, target);
-	WRITE_BYTE(0);
-	WRITE_STRING(msg.c_str());
-	MESSAGE_END();
-}
-
-void SayTextAll(edict_t* target, string msg) {
-	MESSAGE_BEGIN(MSG_ALL, gmsgSayText, NULL);
-	WRITE_BYTE(0);
-	WRITE_STRING(msg.c_str());
-	MESSAGE_END();
-}
-
 void cooldown_chat_spam_counters() {
 	float spamThreshold = getSpamThreshold();
 
 	for (int i = 1; i <= gpGlobals->maxClients; i++) {
-		edict_t* plr = INDEXENT(i);
+		edict_t* ed = INDEXENT(i);
 
-		if (!isValidPlayer(plr)) {
+		if (!IsValidPlayer(ed)) {
 			continue;
 		}
 
-		SpamState* state = getSpamState(plr);
+		CBasePlayer* plr = (CBasePlayer*)CBaseEntity::Instance(ed);
+
+		SpamState* state = getSpamState(ed);
 		if (state == NULL)
 			continue;
 
@@ -120,7 +102,7 @@ void cooldown_chat_spam_counters() {
 			state->notifyNextMsg = false;
 			state->isBlocked = false;
 
-			SayText(plr, "[AntiSpam] You can send a message now.\n");
+			UTIL_SayText("[AntiSpam] You can send a message now.\n", plr);
 		}
 	}
 }
@@ -141,7 +123,7 @@ string getIpWithoutPort(string ip) {
 		return ip;
 }
 
-int ClientConnect(edict_t* pEntity, const char* pszName, const char* pszAddress, char szRejectReason[128]) {
+HOOK_RETURN_DATA ClientConnect(edict_t* pEntity, const char* pszName, const char* pszAddress, char szRejectReason[128]) {
 	string ip = getIpWithoutPort(pszAddress);
 	string nick = pszName;
 	g_nickname_ips[nick] = ip;
@@ -152,19 +134,20 @@ int ClientConnect(edict_t* pEntity, const char* pszName, const char* pszAddress,
 		const char* sReason = UTIL_VarArgs("[AntiSpam] Your rejoins are spamming the chat. Wait %d seconds.", (int)g_safeRejoinDelay->value);
 		strncpy(szRejectReason, sReason, 128);
 		//SayTextAll("[AntiSpam] " + sNick + " connection rejected due to rejoin spam.\n");
-		RETURN_META_VALUE(MRES_SUPERCEDE, 0);
+		return HOOK_HANDLED_OVERRIDE(0);
 	}
 	else {
-		println("[AntiSpam] Unknown IP address: " + ip);
+		ALERT(at_console, "Unknown IP address: %s\n", ip.c_str());
 	}
-	RETURN_META_VALUE(MRES_IGNORED, 0);
+
+	return HOOK_CONTINUE;
 }
 
-void ClientJoin(edict_t* plr) {
-	SpamState* state = getSpamState(plr);
+HOOK_RETURN_DATA ClientJoin(CBasePlayer* plr) {
+	SpamState* state = getSpamState(plr->edict());
 
 	if (!state) {
-		RETURN_META(MRES_IGNORED);
+		return HOOK_CONTINUE;
 	}
 
 	float timeSinceLastJoin = g_engfuncs.pfnTime() - state->lastJoin;
@@ -175,31 +158,31 @@ void ClientJoin(edict_t* plr) {
 
 	state->lastJoin = g_engfuncs.pfnTime();
 
-	string netname = STRING(plr->v.netname);
+	string netname = STRING(plr->pev->netname);
 
 	if (g_nickname_ips.find(netname) != g_nickname_ips.end()) {
 		state->ipAddr = g_nickname_ips[netname];
 		g_nickname_ips.erase(netname);
-		println("[AntiSpam] " + netname + " = " + state->ipAddr);
+		ALERT(at_console, "%s", (netname + " = " + state->ipAddr).c_str());
 	}
 
-	RETURN_META(MRES_IGNORED);
+	return HOOK_CONTINUE;
 }
 
-void ClientCommand(edict_t* plr) {
-	CommandArgs args = CommandArgs();
+HOOK_RETURN_DATA ClientCommand(CBasePlayer* plr) {
+	CommandArgs args;
 	args.loadArgs();
 
-	if (!isValidPlayer(plr) || args.isConsoleCmd || args.ArgC() < 1)
-		RETURN_META(MRES_IGNORED);
+	if (!IsValidPlayer(plr->edict()) || args.isConsoleCmd || args.ArgC() < 1)
+		return HOOK_CONTINUE;
 
 	float safeDelay = g_safeChatDelay->value;
 	float throttleDelay = safeDelay * 2; // account for cooldown loop
 	float spamThreshold = getSpamThreshold();
 
-	SpamState* state = getSpamState(plr);
+	SpamState* state = getSpamState(plr->edict());
 	if (!state) {
-		RETURN_META(MRES_IGNORED);
+		return HOOK_CONTINUE;
 	}
 
 	float timeSinceLastChat = g_engfuncs.pfnTime() - state->lastChat;
@@ -212,7 +195,7 @@ void ClientCommand(edict_t* plr) {
 			if (timeSinceLastChat < 1.0f) {
 				state->spam += throttleDelay * 2; // flooding the chat
 			}
-			state->spam = Min(spamThreshold, state->spam); // never wait more than the safe message delay
+			state->spam = V_min(spamThreshold, state->spam); // never wait more than the safe message delay
 		}
 
 		if (state->spam >= spamThreshold) {
@@ -225,15 +208,15 @@ void ClientCommand(edict_t* plr) {
 
 	if (state->isBlocked) {
 		float waitTime = ceilf(state->getNextSafeMessageTime());
-		SayText(plr, UTIL_VarArgs("[AntiSpam] Chat blocked. Wait %d seconds.\n", (int)waitTime));
-		RETURN_META(MRES_SUPERCEDE);
+		UTIL_SayText(UTIL_VarArgs("[AntiSpam] Chat blocked. Wait %d seconds.\n", (int)waitTime), plr);
+		return HOOK_HANDLED_OVERRIDE(0);
 	}
 
 	float safeMessageDelay = state->getNextSafeMessageTime();
 
 	if (safeMessageDelay > 0) {
 		if (safeMessageDelay >= 0.5f) {
-			SayText(plr, UTIL_VarArgs("[AntiSpam] Wait %d seconds.\n", (int)ceilf(safeMessageDelay)));
+			UTIL_SayText(UTIL_VarArgs("[AntiSpam] Wait %d seconds.\n", (int)ceilf(safeMessageDelay)), plr);
 		}
 		if (safeMessageDelay > 2.0f) {
 			state->notifyNextMsg = true; // hard to time messages beyond a few seconds
@@ -242,37 +225,31 @@ void ClientCommand(edict_t* plr) {
 
 	//println("SPAM " + state->spam + " / " + spamThreshold);
 
-	RETURN_META(MRES_IGNORED);
+	return HOOK_CONTINUE;
 }
 
-void MapInit(edict_t* edict_list, int edictCount, int clientMax) {
+HOOK_RETURN_DATA MapInit() {
     g_player_states.clear();
     g_nickname_ips.clear();
-	RETURN_META(MRES_IGNORED);
+	return HOOK_CONTINUE;
 }
 
-void StartFrame() {
-	g_Scheduler.Think();
-	RETURN_META(MRES_IGNORED);
-}
+extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
+    g_safeChatDelay = RegisterPluginCVar(plugin, "antispam.safe_chat_delay", "5", 5, 0);
+    g_spamAllowed = RegisterPluginCVar(plugin, "antispam.spam_threshold", "120", 120, 0);
+    g_safeRejoinDelay = RegisterPluginCVar(plugin, "antispam.safe_rejoin_delay", "60", 60, 0);
+    g_rejoinSpamAllowed = RegisterPluginCVar(plugin, "antispam.rejoin_spam_allowed", "3", 3, 0);
 
-void PluginInit() {
-    g_safeChatDelay = RegisterCVar("antispam.safe_chat_delay", "5", 5, 0);
-    g_spamAllowed = RegisterCVar("antispam.spam_threshold", "120", 120, 0);
-    g_safeRejoinDelay = RegisterCVar("antispam.safe_rejoin_delay", "60", 60, 0);
-    g_rejoinSpamAllowed = RegisterCVar("antispam.rejoin_spam_allowed", "3", 3, 0);
-
-    g_dll_hooks.pfnClientCommand = ClientCommand;
-    g_dll_hooks.pfnClientConnect = ClientConnect;
-    g_dll_hooks.pfnClientPutInServer = ClientJoin;
-    g_dll_hooks.pfnServerActivate = MapInit;
-    g_dll_hooks.pfnStartFrame = StartFrame;
+	g_hooks.pfnClientCommand = ClientCommand;
+	g_hooks.pfnClientConnect = ClientConnect;
+	g_hooks.pfnClientPutInServer = ClientJoin;
+	g_hooks.pfnMapInit = MapInit;
 
     g_Scheduler.SetInterval(cooldown_chat_spam_counters, 1.0f, -1);
     g_Scheduler.SetInterval(cooldown_join_spam_counters, g_safeRejoinDelay->value, -1);
+
+	return InitPluginApi(plugin, &g_hooks, interfaceVersion);
 }
 
-
-
-void PluginExit() {
+extern "C" void DLLEXPORT PluginExit() {
 }
