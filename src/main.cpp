@@ -92,7 +92,7 @@ void cooldown_chat_spam_counters() {
 
 		if (state->spam > 0) {
 			state->spam -= 1;
-			//println("SPAM " + state->spam + " " + spamThreshold);
+			//ALERT(at_console, "SPAM " + state->spam + " " + spamThreshold);
 		}
 		else {
 			state->spam = 0;
@@ -163,7 +163,7 @@ HOOK_RETURN_DATA ClientJoin(CBasePlayer* plr) {
 	if (g_nickname_ips.find(netname) != g_nickname_ips.end()) {
 		state->ipAddr = g_nickname_ips[netname];
 		g_nickname_ips.erase(netname);
-		ALERT(at_console, "%s", (netname + " = " + state->ipAddr).c_str());
+		ALERT(at_console, "%s\n", (netname + " = " + state->ipAddr).c_str());
 	}
 
 	return HOOK_CONTINUE;
@@ -224,7 +224,7 @@ HOOK_RETURN_DATA ClientCommand(CBasePlayer* plr) {
 		}
 	}
 
-	//println("SPAM " + state->spam + " / " + spamThreshold);
+	//ALERT(at_console, "SPAM " + state->spam + " / " + spamThreshold);
 
 	return HOOK_CONTINUE;
 }
