@@ -43,11 +43,11 @@ struct SpamState {
 unordered_map<string,SpamState> g_player_states;
 unordered_map<string,string> g_nickname_ips; // maps a nickname to an ip address. Only valid between a conect and join hook
 
-SpamState* getSpamState(edict_t* plr)
+SpamState* getSpamState(CBasePlayer* plr)
 {
-    string steamId = getPlayerUniqueId(plr);
+    string steamId = plr->GetSteamID();
     if (steamId == "STEAM_ID_LAN") {
-        steamId = plr->v.netname;
+        steamId = plr->DisplayName();
     }
 
     if (g_player_states.find(steamId) == g_player_states.end()) {
@@ -78,15 +78,13 @@ void cooldown_chat_spam_counters() {
 	//float spamThreshold = getSpamThreshold();
 
 	for (int i = 1; i <= gpGlobals->maxClients; i++) {
-		edict_t* ed = INDEXENT(i);
+		CBasePlayer* plr = UTIL_PlayerByIndex(i);
 
-		if (!IsValidPlayer(ed)) {
+		if (!plr) {
 			continue;
 		}
 
-		CBasePlayer* plr = (CBasePlayer*)CBaseEntity::Instance(ed);
-
-		SpamState* state = getSpamState(ed);
+		SpamState* state = getSpamState(plr);
 		if (state == NULL)
 			continue;
 
@@ -102,7 +100,7 @@ void cooldown_chat_spam_counters() {
 			state->notifyNextMsg = false;
 			state->isBlocked = false;
 
-			UTIL_SayText("[AntiSpam] You can send a message now.\n", plr);
+			UTIL_ClientPrint(plr, print_chat, "[AntiSpam] You can send a message now.\n");
 		}
 	}
 }
@@ -144,7 +142,7 @@ HOOK_RETURN_DATA ClientConnect(edict_t* pEntity, const char* pszName, const char
 }
 
 HOOK_RETURN_DATA ClientJoin(CBasePlayer* plr) {
-	SpamState* state = getSpamState(plr->edict());
+	SpamState* state = getSpamState(plr);
 
 	if (!state) {
 		return HOOK_CONTINUE;
@@ -180,7 +178,7 @@ HOOK_RETURN_DATA ClientCommand(CBasePlayer* plr) {
 	float throttleDelay = safeDelay * 2; // account for cooldown loop
 	float spamThreshold = getSpamThreshold();
 
-	SpamState* state = getSpamState(plr->edict());
+	SpamState* state = getSpamState(plr);
 	if (!state) {
 		return HOOK_CONTINUE;
 	}
@@ -209,7 +207,7 @@ HOOK_RETURN_DATA ClientCommand(CBasePlayer* plr) {
 
 	if (state->isBlocked) {
 		float waitTime = ceilf(state->getNextSafeMessageTime());
-		UTIL_SayText(UTIL_VarArgs("[AntiSpam] Chat blocked. Wait %d seconds.\n", (int)waitTime), plr);
+		UTIL_ClientPrint(plr, print_chat, UTIL_VarArgs("[AntiSpam] Chat blocked. Wait %d seconds.\n", (int)waitTime));
 		return HOOK_HANDLED_OVERRIDE(0);
 	}
 
@@ -217,7 +215,7 @@ HOOK_RETURN_DATA ClientCommand(CBasePlayer* plr) {
 
 	if (safeMessageDelay > 0) {
 		if (safeMessageDelay >= 0.5f) {
-			UTIL_SayText(UTIL_VarArgs("[AntiSpam] Wait %d seconds.\n", (int)ceilf(safeMessageDelay)), plr);
+			UTIL_ClientPrint(plr, print_chat, UTIL_VarArgs("[AntiSpam] Wait %d seconds.\n", (int)ceilf(safeMessageDelay)));
 		}
 		if (safeMessageDelay > 2.0f) {
 			state->notifyNextMsg = true; // hard to time messages beyond a few seconds
@@ -235,11 +233,11 @@ HOOK_RETURN_DATA MapInit() {
 	return HOOK_CONTINUE;
 }
 
-extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
-    g_safeChatDelay = RegisterPluginCVar(plugin, "antispam.safe_chat_delay", "5", 5, 0);
-    g_spamAllowed = RegisterPluginCVar(plugin, "antispam.spam_threshold", "120", 120, 0);
-    g_safeRejoinDelay = RegisterPluginCVar(plugin, "antispam.safe_rejoin_delay", "60", 60, 0);
-    g_rejoinSpamAllowed = RegisterPluginCVar(plugin, "antispam.rejoin_spam_allowed", "3", 3, 0);
+extern "C" int DLLEXPORT PluginInit() {
+    g_safeChatDelay = RegisterPluginCVar("antispam.safe_chat_delay", "5", 5, 0);
+    g_spamAllowed = RegisterPluginCVar("antispam.spam_threshold", "120", 120, 0);
+    g_safeRejoinDelay = RegisterPluginCVar("antispam.safe_rejoin_delay", "60", 60, 0);
+    g_rejoinSpamAllowed = RegisterPluginCVar("antispam.rejoin_spam_allowed", "3", 3, 0);
 
 	g_hooks.pfnClientCommand = ClientCommand;
 	g_hooks.pfnClientConnect = ClientConnect;
@@ -249,7 +247,7 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
     g_Scheduler.SetInterval(cooldown_chat_spam_counters, 1.0f, -1);
     g_Scheduler.SetInterval(cooldown_join_spam_counters, g_safeRejoinDelay->value, -1);
 
-	return InitPluginApi(plugin, &g_hooks, interfaceVersion);
+	return RegisterPlugin(&g_hooks);
 }
 
 extern "C" void DLLEXPORT PluginExit() {
