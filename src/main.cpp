@@ -1,6 +1,5 @@
 #include "extdll.h"
 #include "util.h"
-#include "cbase.h"
 #include "PluginHooks.h"
 #include "PluginManager.h"
 #include "Scheduler.h"
@@ -121,7 +120,7 @@ string getIpWithoutPort(string ip) {
 		return ip;
 }
 
-HOOK_RETURN_DATA ClientConnect(edict_t* pEntity, const char* pszName, const char* pszAddress, char szRejectReason[128]) {
+HOOK_RETURN_DATA ClientConnectHook(edict_t* pEntity, const char* pszName, const char* pszAddress, char szRejectReason[128]) {
 	string ip = getIpWithoutPort(pszAddress);
 	string nick = pszName;
 	g_nickname_ips[nick] = ip;
@@ -240,7 +239,7 @@ extern "C" int DLLEXPORT PluginInit() {
     g_rejoinSpamAllowed = RegisterPluginCVar("antispam.rejoin_spam_allowed", "3", 3, 0);
 
 	g_hooks.pfnClientCommand = ClientCommand;
-	g_hooks.pfnClientConnect = ClientConnect;
+	g_hooks.pfnClientConnect = ClientConnectHook;
 	g_hooks.pfnClientPutInServer = ClientJoin;
 	g_hooks.pfnMapInit = MapInit;
 
